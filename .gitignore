@@ -1,5 +1,5 @@
 # Local .terraform directories
-**/.terraform/*
+.terraform/
 
 # Terraform state files
 *.tfstate
@@ -8,5 +8,5 @@
 # Terraform lock file
 .terraform.lock.hcl
 
-# documents
+# Documents
 *.doc

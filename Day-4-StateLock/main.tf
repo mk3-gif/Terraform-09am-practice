@@ -3,7 +3,7 @@ resource "aws_instance" "ec2" {
   instance_type          = "t2.micro"
 
   tags = {
-    Name = "terrafrom_dev-1"
+    Name = "terrafrom_dev-2" #change the name tag
   }
 }
 

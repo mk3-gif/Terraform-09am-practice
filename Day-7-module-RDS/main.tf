@@ -1,0 +1,21 @@
+module "rds" {
+  source                     = "./RDS"
+  subnet_group               = "db_subnet_group"
+  subnet_id_1                = "subnet-0fe28b3412ab6b559"
+  subnet_id_2                = "subnet-0ce544972291af008"
+  subnet_group_tag           = "db_subnet_group"
+  sg_name                    = "rds_sg"
+  sg_vpc_id                  = "vpc-00075e2fe98eafb6c"
+  ingress_port               = 3306
+  ingress_protocol           = "tcp"
+  ingress_cidr_blocks        = ["0.0.0.0/0"]
+  egress_port                = 0
+  egress_protocol            = "-1"
+  rds_sg_tags                = "rds_sg"
+  rds_db_name                = "mymodulerds"
+  rds_db_usrname             = "admin"
+  rds_db_password            = "Password!"
+  rds_instance_class         = "db.t3.micro"
+  rds_backup_retention_period = 1
+  rds_tags                   = "my-rds-instance"
+}

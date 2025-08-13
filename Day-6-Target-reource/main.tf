@@ -18,3 +18,4 @@ resource "aws_s3_bucket" "name" {
   
 
 }
+#terraform apply -auto-approve --target=aws_s3_bucket.name

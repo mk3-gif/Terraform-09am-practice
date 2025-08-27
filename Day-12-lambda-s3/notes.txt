@@ -1,0 +1,145 @@
+Your Lambda code is stored in an S3 bucket.
+
+Terraform references the S3 object to create the Lambda function.
+
+Any updates to the S3 object trigger an update to the Lambda.
+
+Here’s a step-by-step Terraform example:
+
+# 1️⃣ Create S3 bucket (optional if already exists)
+resource "aws_s3_bucket" "lambda_bucket" {
+  bucket = "my-lambda-bucket-12345"  # must be globally unique
+  acl    = "private"
+}
+
+# 2️⃣ Upload Lambda code to S3
+resource "aws_s3_object" "lambda_zip" {
+  bucket = aws_s3_bucket.lambda_bucket.id
+  key    = "lambda_function.zip"
+  source = "lambda_function.zip"  # local ZIP file path
+  etag   = filemd5("lambda_function.zip")  # ensures updates are detected
+}
+
+# 3️⃣ IAM Role for Lambda
+resource "aws_iam_role" "lambda_role" {
+  name = "lambda_execution_role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        Service = "lambda.amazonaws.com"
+      }
+    }]
+  })
+}
+
+# 4️⃣ Attach basic Lambda execution policy
+resource "aws_iam_role_policy_attachment" "lambda_policy" {
+  role       = aws_iam_role.lambda_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+# 5️⃣ Create Lambda function using S3 object
+resource "aws_lambda_function" "my_lambda" {
+  function_name = "my_lambda_function"
+  role          = aws_iam_role.lambda_role.arn
+  handler       = "lambda_function.lambda_handler"
+  runtime       = "python3.12"
+  timeout       = 900
+  memory_size   = 128
+
+  s3_bucket        = aws_s3_bucket.lambda_bucket.id
+  s3_key           = aws_s3_object.lambda_zip.id
+  source_code_hash = aws_s3_object.lambda_zip.etag  # triggers update on ZIP change
+}
+
+✅ Key Points:
+
+S3 bucket stores your Lambda ZIP file.
+
+aws_s3_object uploads the local ZIP to S3.
+
+Lambda references the S3 object using s3_bucket and s3_key.
+
+source_code_hash ensures Terraform redeploys Lambda when the ZIP changes.
+
+etag = filemd5("lambda_function.zip") helps detect updates to the ZIP file.
+
+This setup means you can change your Lambda code locally, Terraform will upload it to S3, and Lambda will automatically get updated.
+
+I can also make a versioned S3 approach so Lambda updates without overwriting previous code if you want.
+
+Do you want me to do that?
+
+You said:
+ key    = "lambda_function.zip"
+  source = "lambda_function.zip"???
+ChatGPT said:
+
+Ah, let me clarify this part:
+
+In the aws_s3_object resource:
+
+resource "aws_s3_object" "lambda_zip" {
+  bucket = aws_s3_bucket.lambda_bucket.id
+  key    = "lambda_function.zip"
+  source = "lambda_function.zip"
+  etag   = filemd5("lambda_function.zip")
+}
+
+Explanation:
+
+source
+
+This is the local file path of your Lambda ZIP on your machine.
+
+Terraform will upload this file to S3.
+
+Example: If your ZIP file is in the same folder as your Terraform code, source = "lambda_function.zip" is correct.
+
+If it’s in another folder: source = "./build/lambda_function.zip"
+
+key
+
+This is the name of the object in the S3 bucket.
+
+Think of it as the “filename” in S3.
+
+You can change it if you want, e.g., key = "lambda/v1/lambda_function.zip"
+
+etag
+
+Optional but recommended.
+
+It’s a checksum of the file so Terraform knows when the file has changed.
+
+This ensures Lambda is redeployed when you update the ZIP.
+
+
+s3_bucket = aws_s3_bucket.lambda_bucket.id
+s3_key    = aws_s3_object.lambda_zip.key
+aws_s3_bucket.lambda_bucket.id → the bucket name where the ZIP is stored.
+
+aws_s3_object.lambda_zip.key → the object key of the ZIP in the bucket (lambda_function.zip).
+
+✅ Lambda does not access the .py file directly. It accesses the ZIP file from S3. Inside the ZIP is your .py file.
+
+Workflow:
+You zip your Python file locally: lambda_function.zip contains lambda_function.py.
+
+Terraform uploads lambda_function.zip to S3 (aws_s3_object).
+
+Lambda uses the s3_bucket and s3_key to download the ZIP when creating or updating the function.
+
+Lambda executes the function specified in handler = "lambda_function.lambda_handler".
+
+So effectively:
+
+scss
+Copy code
+Your Python file (.py) → zipped → uploaded to S3 → Lambda reads ZIP → executes .py inside ZIP
+You are not accessing the .py file directly from S3, you are accessing the ZIP that contains the .py.
+

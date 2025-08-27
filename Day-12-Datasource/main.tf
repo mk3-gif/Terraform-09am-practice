@@ -47,6 +47,47 @@ output "subnet_name" {
   value = data.aws_subnet.name.tags["Name"]
 }
 
+    #two subnet with same name
+#     Terraform Data Source behavior
+
+# If you use a filter with only tag:Name, Terraform may return multiple matches → this causes an error like:
+
+# data.aws_subnet.example: multiple results found
+
+
+# Terraform needs a unique match.
+
+# How to handle it
+
+# You must add extra filters to uniquely identify the subnet. For example:
+
+# Filter by Name + AZ
+
+# Or filter by Name + VPC ID
+
+# Example:
+
+# data "aws_subnet" "example" {
+#   filter {
+#     name   = "tag:Name"
+#     values = ["my-subnet"]
+#   }
+#   filter {
+#     name   = "availability-zone"
+#     values = ["us-east-1a"]
+#   }
+#   vpc_id = data.aws_vpc.main.id
+# }
+
+
+# AWS reality check
+
+# AWS allows multiple subnets with the same Name tag (because tags are just labels).
+
+# But Subnet IDs are always unique (subnet-xxxxxxx).
+
+# So in Terraform, you should prefer subnet_id when possible instead of just relying on Name.
+
 #👉 Rule of thumb: ID = .id | Name = .tags["Name"]
 
 # Terraform Data Source

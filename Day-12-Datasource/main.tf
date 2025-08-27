@@ -46,3 +46,23 @@ resource "aws_instance" "name" {
 output "subnet_name" {
   value = data.aws_subnet.name.tags["Name"]
 }
+
+#👉 Rule of thumb: ID = .id | Name = .tags["Name"]
+
+# Terraform Data Source
+
+# A data source in Terraform lets you fetch/read information from existing resources without creating new ones.
+
+# It acts like a lookup — useful when you need details (IDs, attributes, tags) of resources already created in AWS (or other providers).
+
+# Data sources are read-only; they don’t modify infrastructure.
+
+# Common examples in AWS:
+
+# aws_vpc → fetch an existing VPC by tag or ID
+
+# aws_subnet → get details of an existing subnet
+
+# aws_ami → find the latest AMI by filters
+
+# aws_security_group → lookup an SG by name

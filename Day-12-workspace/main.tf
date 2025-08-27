@@ -43,3 +43,4 @@ resource "aws_instance" "name" {
 #terraform workspace select default
 #terraform workspace show
 
+# terraform.tfstate.d -- > contains list of workspace

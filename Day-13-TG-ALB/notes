@@ -1,0 +1,479 @@
+complete working Terraform file that:
+
+Creates a VPC with 2 public subnets.
+
+Creates an EC2 instance (so you have something to attach to the Target Group).
+
+Creates a Security Group for the Load Balancer and EC2.
+
+Creates an Application Load Balancer (ALB).
+
+Creates a Target Group and attaches the EC2 instance.
+
+Creates a Listener that forwards traffic from ALB → EC2.
+
+👉 This will give you a public-facing ALB (internal = false) that serves a demo EC2 webserver.
+
+🟢 Full Terraform Code (alb.tf)
+provider "aws" {
+  region = "us-east-1" # Change if needed
+}
+
+# ----------------------
+# 1. VPC + Subnets
+# ----------------------
+resource "aws_vpc" "main" {
+  cidr_block = "10.0.0.0/16"
+  enable_dns_support = true
+  enable_dns_hostnames = true
+  tags = { Name = "my-vpc" }
+}
+
+resource "aws_internet_gateway" "igw" {
+  vpc_id = aws_vpc.main.id
+  tags = { Name = "my-igw" }
+}
+
+resource "aws_subnet" "public1" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.1.0/24"
+  availability_zone       = "us-east-1a"
+  map_public_ip_on_launch = true
+  tags = { Name = "public-subnet-1" }
+}
+
+resource "aws_subnet" "public2" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.2.0/24"
+  availability_zone       = "us-east-1b"
+  map_public_ip_on_launch = true
+  tags = { Name = "public-subnet-2" }
+}
+
+resource "aws_route_table" "public_rt" {
+  vpc_id = aws_vpc.main.id
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.igw.id
+  }
+  tags = { Name = "public-rt" }
+}
+
+resource "aws_route_table_association" "a1" {
+  subnet_id      = aws_subnet.public1.id
+  route_table_id = aws_route_table.public_rt.id
+}
+
+resource "aws_route_table_association" "a2" {
+  subnet_id      = aws_subnet.public2.id
+  route_table_id = aws_route_table.public_rt.id
+}
+
+# ----------------------
+# 2. Security Groups
+# ----------------------
+# For Load Balancer
+resource "aws_security_group" "lb_sg" {
+  name        = "lb-sg"
+  description = "Allow HTTP inbound traffic"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# For EC2 Instance
+resource "aws_security_group" "ec2_sg" {
+  name        = "ec2-sg"
+  description = "Allow HTTP from ALB"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    security_groups = [aws_security_group.lb_sg.id] # Only ALB can reach EC2
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# ----------------------
+# 3. EC2 Instance
+# ----------------------
+resource "aws_instance" "web" {
+  ami           = "ami-0c02fb55956c7d316" # Amazon Linux 2 (us-east-1) - change region if needed
+  instance_type = "t2.micro"
+  subnet_id     = aws_subnet.public1.id
+  security_groups = [aws_security_group.ec2_sg.id]
+  associate_public_ip_address = true
+
+  user_data = <<-EOF
+              #!/bin/bash
+              sudo yum update -y
+              sudo yum install -y httpd
+              sudo systemctl enable httpd
+              sudo systemctl start httpd
+              echo "Hello from Terraform EC2 via ALB!" > /var/www/html/index.html
+              EOF
+
+  tags = { Name = "web-instance" }
+}
+
+# ----------------------
+# 4. Target Group
+# ----------------------
+resource "aws_lb_target_group" "my_tg" {
+  name        = "my-target-group"
+  port        = 80
+  protocol    = "HTTP"
+  vpc_id      = aws_vpc.main.id
+  target_type = "instance"
+
+  health_check {
+    path                = "/"
+    protocol            = "HTTP"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+  }
+}
+
+# Attach EC2 to Target Group
+resource "aws_lb_target_group_attachment" "ec2_attach" {
+  target_group_arn = aws_lb_target_group.my_tg.arn
+  target_id        = aws_instance.web.id
+  port             = 80
+}
+
+# ----------------------
+# 5. Load Balancer (ALB)
+# ----------------------
+resource "aws_lb" "my_alb" {
+  name               = "my-alb"
+  internal           = false # Public ALB
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.lb_sg.id]
+  subnets            = [aws_subnet.public1.id, aws_subnet.public2.id]
+
+  enable_deletion_protection = false
+  tags = { Name = "my-alb" }
+}
+
+# ----------------------
+# 6. Listener
+# ----------------------
+resource "aws_lb_listener" "http" {
+  load_balancer_arn = aws_lb.my_alb.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.my_tg.arn
+  }
+}
+
+# ----------------------
+# 7. Outputs
+# ----------------------
+output "alb_dns_name" {
+  value = aws_lb.my_alb.dns_name
+}
+
+✅ How It Works
+
+Creates VPC + Subnets + IGW + Route Table.
+
+Creates Security Groups for ALB & EC2.
+
+Launches EC2 instance with Apache running and a test page.
+
+Creates a Target Group and attaches EC2.
+
+Creates a Public ALB with listener on port 80.
+
+Outputs the ALB DNS name → open it in browser → you’ll see the message.
+
+⚡ Steps to Run:
+
+terraform init
+terraform apply -auto-approve
+
+
+Then copy the ALB DNS Name from Terraform output → open in browser → it should show:
+
+Hello from Terraform EC2 via ALB!
+
+
+
+
+
+Target Group in AWS Console, it asks you for subnets or availability zones because the console wizard needs to know where your targets will live.
+
+But in Terraform (and API level) it works differently:
+
+🔎 Rule
+
+Target Group itself does NOT belong to a subnet.
+
+Instead, you only give the VPC ID:
+
+resource "aws_lb_target_group" "my_tg" {
+  name        = "my-target-group"
+  port        = 80
+  protocol    = "HTTP"
+  vpc_id      = aws_vpc.main.id   # Required
+  target_type = "instance"
+}
+
+
+The actual subnet is indirectly chosen when you attach instances (or IPs) to the target group.
+
+If target_type = "instance" → you attach an EC2 instance ID, and that instance already lives in some subnet.
+
+If target_type = "ip" → you explicitly attach an IP address, and that IP belongs to a subnet.
+
+If target_type = "lambda" → no subnet is needed.
+
+✅ Example in our Terraform
+resource "aws_lb_target_group_attachment" "ec2_attach" {
+  target_group_arn = aws_lb_target_group.my_tg.arn
+  target_id        = aws_instance.web.id  # This EC2 already has a subnet
+  port             = 80
+}
+
+
+Here:
+
+We didn’t specify any subnet in the target group.
+
+Instead, aws_instance.web already sits in subnet public1, so AWS knows where that target is.
+
+📝 Console vs Terraform Difference
+
+AWS Console: asks for subnet upfront (because it doesn’t yet know your targets).
+
+Terraform / API: only needs vpc_id → the subnet comes automatically from the registered targets.
+
+
+
+EC2 private IP addresses to a Target Group, but you must switch the target_type to "ip" instead of "instance".
+
+🔎 Difference
+
+target_type = "instance" → You register the instance ID (AWS figures out its private IP automatically).
+
+target_type = "ip" → You directly register private IP addresses as targets.
+
+✅ Example: Target Group with IPs
+resource "aws_lb_target_group" "my_tg" {
+  name        = "ip-target-group"
+  port        = 80
+  protocol    = "HTTP"
+  vpc_id      = aws_vpc.main.id
+  target_type = "ip"
+
+  health_check {
+    path     = "/"
+    protocol = "HTTP"
+  }
+}
+
+# Attach an EC2 instance using its private IP
+resource "aws_lb_target_group_attachment" "ip_attach" {
+  target_group_arn = aws_lb_target_group.my_tg.arn
+  target_id        = "10.0.1.25"   # EC2's private IP
+  port             = 80
+}
+
+📝 Key Notes
+
+With IP mode, you must use private IPs from the same VPC as the Target Group.
+
+Useful when:
+
+You want to register containers (ECS tasks) running on ENIs.
+
+You want to register on-prem servers reachable via VPC Peering / VPN.
+
+You can mix multiple IPs across different subnets in the same VPC.
+
+
+
+
+Target Group when you use target_type = "ip".
+But in Terraform, you must declare one aws_lb_target_group_attachment per IP address.
+
+✅ Example: Attaching Multiple IPs
+resource "aws_lb_target_group" "my_tg" {
+  name        = "ip-target-group"
+  port        = 80
+  protocol    = "HTTP"
+  vpc_id      = aws_vpc.main.id
+  target_type = "ip"
+}
+
+# Attach multiple private IPs
+resource "aws_lb_target_group_attachment" "ip1" {
+  target_group_arn = aws_lb_target_group.my_tg.arn
+  target_id        = "10.0.1.25"   # First EC2 private IP
+  port             = 80
+}
+
+resource "aws_lb_target_group_attachment" "ip2" {
+  target_group_arn = aws_lb_target_group.my_tg.arn
+  target_id        = "10.0.2.30"   # Second EC2 private IP
+  port             = 80
+}
+
+🚀 More Scalable Way (Using a List of IPs)
+
+Instead of repeating blocks manually, you can use a list of IPs and loop with for_each:
+
+variable "target_ips" {
+  type    = list(string)
+  default = ["10.0.1.25", "10.0.2.30", "10.0.3.40"]
+}
+
+resource "aws_lb_target_group_attachment" "ip_targets" {
+  for_each         = toset(var.target_ips)
+  target_group_arn = aws_lb_target_group.my_tg.arn
+  target_id        = each.value
+  port             = 80
+}
+
+
+Now you just update the list in var.target_ips and Terraform will handle adding/removing targets automatically.
+
+⚠️ Important Points
+
+All IPs must belong to the same VPC as the Target Group.
+
+You can mix IPs from different subnets, no problem.
+
+They must be private IPs, not public.
+
+Good for ECS Fargate tasks, containers, or on-prem servers reachable via VPC peering / VPN.
+
+
+
+
+
+
+user_data = <<-EOF
+              #!/bin/bash
+              sudo yum update -y
+              sudo yum install -y httpd
+              sudo systemctl enable httpd
+              sudo systemctl start httpd
+              echo "Hello from Terraform EC2 via ALB!" > /var/www/html/index.html
+              EOF
+🔎 Explanation
+#!/bin/bash
+
+Shebang line – tells EC2 to run this script with bash shell.
+
+sudo yum update -y
+
+Updates all installed packages to their latest versions.
+
+-y automatically answers "yes" to prompts.
+
+sudo yum install -y httpd
+
+Installs the Apache HTTP server (httpd package).
+
+This will be your basic web server.
+
+sudo systemctl enable httpd
+
+Ensures Apache auto-starts at boot time.
+
+sudo systemctl start httpd
+
+Starts the Apache web server immediately.
+
+echo "Hello from Terraform EC2 via ALB!" > /var/www/html/index.html
+
+Writes a test message into Apache’s default web page.
+
+When you open the ALB DNS in a browser, this is what you’ll see.
+
+
+
+
+The value you give to target_id depends entirely on the target_type you set in the Target Group (aws_lb_target_group).
+
+🔎 Rule
+Case 1 – target_type = "instance"
+resource "aws_lb_target_group" "my_tg" {
+  name        = "my-target-group"
+  port        = 80
+  protocol    = "HTTP"
+  vpc_id      = aws_vpc.main.id
+  target_type = "instance"
+}
+
+resource "aws_lb_target_group_attachment" "ec2_attach" {
+  target_group_arn = aws_lb_target_group.my_tg.arn
+  target_id        = aws_instance.web.id   # ✅ Instance ID
+  port             = 80
+}
+
+
+target_id must be the EC2 instance ID.
+
+AWS internally figures out the private IP from the instance.
+
+Case 2 – target_type = "ip"
+resource "aws_lb_target_group" "my_tg_ip" {
+  name        = "ip-target-group"
+  port        = 80
+  protocol    = "HTTP"
+  vpc_id      = aws_vpc.main.id
+  target_type = "ip"
+}
+
+resource "aws_lb_target_group_attachment" "ip_attach" {
+  target_group_arn = aws_lb_target_group.my_tg_ip.arn
+  target_id        = "10.0.1.25"   # ✅ Instance private IP
+  port             = 80
+}
+
+
+target_id must be a private IP address (string).
+
+Good for ECS Fargate tasks, on-prem servers, or if you don’t want to bind to instance IDs.
+
+Case 3 – target_type = "lambda"
+target_id = aws_lambda_function.my_lambda.arn
+
+
+Here you attach a Lambda ARN.
+
+✅ In Your Current Example
+
+Since our code uses:
+
+target_type = "instance"
+
+
+👉 target_id = aws_instance.web.id (Instance ID, not IP).

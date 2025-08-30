@@ -1,0 +1,11 @@
+bucket created first: nareshitmkdevops
+
+run:
+1st dev:
+terraform init
+terraform plan
+terraform apply -auto-approve 
+terraform destroy -auto-approve 
+
+
+same for test,prod

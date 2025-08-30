@@ -1,0 +1,15 @@
+install opentofu:
+winget install --exact --id=OpenTofu.Tofu
+
+
+Verify installation:
+tofu -version
+
+cmd:
+tofu init
+tofu plan
+tofu apply -auto-approve
+ terraform destroy -auto-approve
+
+tofu use same [registry.opentofu.org\hashicorp\aws\6.11.0] ,  OpenTofu Registry , 
+though it remains compatible with the Terraform registry's providers and modules
